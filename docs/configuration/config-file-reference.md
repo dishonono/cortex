@@ -1787,6 +1787,16 @@ azure:
   # CLI flag: -ruler-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
+  # Azure storage Azure storage MSI resource. If MSI is desired this property should 
+  # be set. In Azure public cloud the value that should be used is: https://storage.azure.com/
+  # CLI flag: -ruler-storage.azure.msi-resource
+  [msi_resource: <string> | default = ""]
+
+  # Azure storage msi resource managed identity client Id. If not supplied 
+  # system assigned identity is used
+  # CLI flag: -ruler-storage.azure.user-assigned-id
+  [user_assigned_id: <string> | default = ""]
+
   # Number of retries for recoverable errors
   # CLI flag: -ruler-storage.azure.max-retries
   [max_retries: <int> | default = 20]
