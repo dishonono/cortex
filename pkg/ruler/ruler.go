@@ -676,16 +676,20 @@ func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 		return r.getShardedRules(ctx, userID)
 	}
 
-	return r.getLocalRules(userID)
+	return r.getLocalRules(userID, "")
 }
 
-func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
+func (r *Ruler) getLocalRules(userID string, ruleGroupName string) ([]*GroupStateDesc, error) {
 	groups := r.manager.GetRules(userID)
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
 	prefix := filepath.Join(r.cfg.RulePath, userID) + "/"
 
 	for _, group := range groups {
+		if ruleGroupName != "" && group.Name() != ruleGroupName {
+			level.Info(r.logger).Log("grpc request for rules of rulegroup " + ruleGroupName)
+			continue //skip group not requested
+		}
 		interval := group.Interval()
 
 		// The mapped filename is url path escaped encoded to make handling `/` characters easier
@@ -832,7 +836,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID)
+	groupDescs, err := r.getLocalRules(userID, in.RuleGroupName)
 	if err != nil {
 		return nil, err
 	}
