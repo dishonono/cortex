@@ -32,7 +32,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.ContainerName, prefix+"azure.container-name", "", "Azure storage container name")
 	f.StringVar(&cfg.Endpoint, prefix+"azure.endpoint-suffix", "", "Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN")
 	f.IntVar(&cfg.MaxRetries, prefix+"azure.max-retries", 20, "Number of retries for recoverable errors")
-	f.StringVar(&cfg.ContainerName, prefix+"azure.msi-resource", "", "Azure storage MSI resource. Either this or account key must be set.")
-	f.StringVar(&cfg.ContainerName, prefix+"azure.user-assigned-id", "", "Azure storage MSI resource managed identity client Id. If not supplied system assigned identity is used")
+	f.StringVar(&cfg.MSIResource, prefix+"azure.msi-resource", "", "Azure storage MSI resource. Either this or account key must be set.")
+	f.StringVar(&cfg.UserAssignedID, prefix+"azure.user-assigned-id", "", "Azure storage MSI resource managed identity client Id. If not supplied system assigned identity is used")
 	cfg.Config.RegisterFlagsWithPrefix(prefix+"azure.", f)
 }
