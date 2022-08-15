@@ -177,7 +177,7 @@ func TestForStateSync(t *testing.T) {
 			Opts:          opts,
 		})
 
-		err = syncAlertsActiveAt(group, evalTime, log.NewNopLogger())
+		err = SyncAlertsActiveAt(group, evalTime, log.NewNopLogger())
 		require.NoError(t, err)
 		require.Equal(t, tst.expectedActiveAt.UTC(), rule.ActiveAlerts()[0].ActiveAt.UTC())
 	}

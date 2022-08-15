@@ -306,7 +306,7 @@ func (*DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error
 	return errs
 }
 
-func syncAlertsActiveAt(g *promRules.Group, lastEvalTimestamp time.Time, logger log.Logger) error {
+func SyncAlertsActiveAt(g *promRules.Group, lastEvalTimestamp time.Time, logger log.Logger) error {
 	var returnError error
 	level.Info(logger).Log("msg", "in syncAlertsActiveAt")
 	maxtMS := int64(model.TimeFromUnixNano(lastEvalTimestamp.UnixNano()))
