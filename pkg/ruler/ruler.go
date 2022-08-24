@@ -266,6 +266,10 @@ func (r *Ruler) GetRing() *ring.Ring {
 	return r.ring
 }
 
+func (r *Ruler) GetLimits() RulesLimits {
+	return r.limits
+}
+
 func (r *Ruler) GetLifecycler() *ring.BasicLifecycler {
 	return r.lifecycler
 }
