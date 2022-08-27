@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -490,8 +491,9 @@ func (t *Cortex) Run() error {
 }
 
 func (t *Cortex) readyHandler(sm *services.Manager) http.HandlerFunc {
+	readyAfter := time.Now().Add(t.Cfg.Ingester.LifecyclerConfig.MinReadyDuration)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !sm.IsHealthy() {
+		if time.Now().Before(readyAfter) || !sm.IsHealthy() {
 			msg := bytes.Buffer{}
 			msg.WriteString("Some services are not Running:\n")
 
