@@ -665,6 +665,11 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 	prefix := filepath.Join(r.cfg.RulePath, userID) + "/"
 
 	for _, group := range groups {
+		if ruleGroupName != "" && group.Name() != ruleGroupName {
+			continue //skip group not requested
+		} else if ruleGroupName != "" {
+			level.Debug(r.logger).Log("msg", "grpc request for rules of rulegroup:"+ruleGroupName)
+		}
 		interval := group.Interval()
 
 		// The mapped filename is url path escaped encoded to make handling `/` characters easier
