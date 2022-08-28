@@ -686,8 +686,9 @@ func (r *Ruler) getLocalRules(userID string, ruleGroupName string) ([]*GroupStat
 
 	for _, group := range groups {
 		if ruleGroupName != "" && group.Name() != ruleGroupName {
-			level.Debug(r.logger).Log("msg", "grpc request for rules of rulegroup:"+ruleGroupName)
 			continue //skip group not requested
+		} else if ruleGroupName != "" {
+			level.Debug(r.logger).Log("msg", "grpc request for rules of rulegroup:"+ruleGroupName)
 		}
 		interval := group.Interval()
 
