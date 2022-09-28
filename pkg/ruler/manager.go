@@ -379,9 +379,15 @@ func SyncAlertsActiveAt(g *promRules.Group, lastEvalTimestamp time.Time, logger 
 			if compare <= 0 {
 				// We have another ruler instance evaluating the same rule group earlier
 				a.ActiveAt = restoredActiveAt
+
+				if a.State == promRules.StatePending && lastEvalTimestamp.Sub(a.ActiveAt) >= alertRule.HoldDuration() {
+					a.State = promRules.StateFiring
+					a.FiredAt = a.ActiveAt.Add(alertRule.HoldDuration())
+					level.Info(logger).Log("msg", "Updated rule state")
+				}
 			}
 
-			level.Debug(logger).Log("msg", "'for' state synced",
+			level.Info(logger).Log("msg", "'for' state synced",
 				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
 				"labels", a.Labels.String())
 		})
