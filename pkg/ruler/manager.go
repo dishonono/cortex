@@ -380,6 +380,7 @@ func SyncAlertsActiveAt(g *promRules.Group, lastEvalTimestamp time.Time, logger 
 				// We have another ruler instance evaluating the same rule group earlier
 				a.ActiveAt = restoredActiveAt
 
+				level.Info(logger).Log("msg", "Before updated rule state", "state", a.State, "lastMinusActiveAt", lastEvalTimestamp.Sub(a.ActiveAt), "for", alertRule.HoldDuration())
 				if a.State == promRules.StatePending && lastEvalTimestamp.Sub(a.ActiveAt) >= alertRule.HoldDuration() {
 					a.State = promRules.StateFiring
 					a.FiredAt = a.ActiveAt.Add(alertRule.HoldDuration())
