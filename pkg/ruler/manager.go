@@ -37,7 +37,7 @@ type DefaultMultiTenantManager struct {
 
 	// Structs for holding per-user Prometheus rules Managers
 	// and a corresponding metrics struct
-	userManagerMtx     sync.Mutex
+	userManagerMtx     sync.RWMutex
 	userManagers       map[string]RulesManager
 	userManagerMetrics *ManagerMetrics
 
@@ -238,11 +238,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string, userManag
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 	var groups []*promRules.Group
-	r.userManagerMtx.Lock()
+	r.userManagerMtx.RLock()
 	if mngr, exists := r.userManagers[userID]; exists {
 		groups = mngr.RuleGroups()
 	}
-	r.userManagerMtx.Unlock()
+	r.userManagerMtx.RUnlock()
 	return groups
 }
 

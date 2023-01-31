@@ -21,6 +21,7 @@ service Ruler {
 
 message RulesRequest {
   string RuleGroupName = 1;
+  string Namespace = 2;
 }
 
 message RulesResponse {

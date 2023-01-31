@@ -675,10 +675,10 @@ func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 		return r.getShardedRules(ctx, userID)
 	}
 
-	return r.getLocalRules(userID, "")
+	return r.getLocalRules(userID, "", "")
 }
 
-func (r *Ruler) getLocalRules(userID string, ruleGroupName string) ([]*GroupStateDesc, error) {
+func (r *Ruler) getLocalRules(userID string, ruleGroupName string, namespace string) ([]*GroupStateDesc, error) {
 	groups := r.manager.GetRules(userID)
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
@@ -687,8 +687,6 @@ func (r *Ruler) getLocalRules(userID string, ruleGroupName string) ([]*GroupStat
 	for _, group := range groups {
 		if ruleGroupName != "" && group.Name() != ruleGroupName {
 			continue //skip group not requested
-		} else if ruleGroupName != "" {
-			level.Debug(r.logger).Log("msg", "grpc request for rules of rulegroup:"+ruleGroupName)
 		}
 		interval := group.Interval()
 
@@ -696,6 +694,13 @@ func (r *Ruler) getLocalRules(userID string, ruleGroupName string) ([]*GroupStat
 		decodedNamespace, err := url.PathUnescape(strings.TrimPrefix(group.File(), prefix))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to decode rule filename")
+		}
+		if namespace != "" && namespace != decodedNamespace {
+			continue //skip group not requested
+		}
+
+		if ruleGroupName != "" && namespace != "" {
+			level.Debug(r.logger).Log("msg", "grpc request for rules of rulegroup:"+ruleGroupName+" in namespace:"+namespace)
 		}
 
 		groupDesc := &GroupStateDesc{
@@ -836,7 +841,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID, in.RuleGroupName)
+	groupDescs, err := r.getLocalRules(userID, in.RuleGroupName, in.Namespace)
 	if err != nil {
 		return nil, err
 	}
