@@ -31,9 +31,11 @@ var RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceS
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	KVStore          kv.Config     `yaml:"kvstore"`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period"`
-	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout"`
+	KVStore           kv.Config     `yaml:"kvstore"`
+	HeartbeatPeriod   time.Duration `yaml:"heartbeat_period"`
+	HeartbeatTimeout  time.Duration `yaml:"heartbeat_timeout"`
+	ReplicationFactor int           `yaml:"replication_factor"`
+	ZoneAwarenessEnabled bool       `yaml:"zone_awareness_enabled"`
 
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"hidden"`
@@ -41,6 +43,7 @@ type RingConfig struct {
 	InstancePort           int      `yaml:"instance_port" doc:"hidden"`
 	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
 	NumTokens              int      `yaml:"num_tokens"`
+	InstanceZone           string   `yaml:"instance_availability_zone"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
@@ -60,6 +63,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix("ruler.ring.", "rulers/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, "ruler.ring.heartbeat-period", 5*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, "ruler.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled).")
+	f.IntVar(&cfg.ReplicationFactor, "ruler.ring.replication-factor", 1, "The replication factor to use when evaluating rules.")
+	f.BoolVar(&cfg.ZoneAwarenessEnabled, "ruler.ring.zone-awareness-enabled", false, "True to enable zone-awareness and replicate across different availability zones.")
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = []string{"eth0", "en0"}
@@ -67,6 +72,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.InstanceAddr, "ruler.ring.instance-addr", "", "IP address to advertise in the ring.")
 	f.IntVar(&cfg.InstancePort, "ruler.ring.instance-port", 0, "Port to advertise in the ring (defaults to server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, "ruler.ring.instance-id", hostname, "Instance ID to register in the ring.")
+	f.StringVar(&cfg.InstanceZone, "ruler.ring.instance-availability-zone", "", "The availability zone where this instance is running. Required if zone-awareness is enabled.")
 	f.IntVar(&cfg.NumTokens, "ruler.ring.num-tokens", 128, "Number of tokens for each ruler.")
 }
 
@@ -86,6 +92,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 		HeartbeatPeriod:     cfg.HeartbeatPeriod,
 		TokensObservePeriod: 0,
 		NumTokens:           cfg.NumTokens,
+		Zone:                cfg.InstanceZone,
 	}, nil
 }
 
@@ -97,8 +104,8 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	rc.SubringCacheDisabled = true
 
-	// Each rule group is loaded to *exactly* one ruler.
-	rc.ReplicationFactor = 1
+	rc.ReplicationFactor = cfg.ReplicationFactor
+	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 
 	return rc
 }

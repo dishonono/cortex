@@ -5,7 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
+
+	"github.com/cortexproject/cortex/pkg/ruler/rulespb"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	ot "github.com/opentracing/opentracing-go"
@@ -16,10 +23,9 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
-
-	"github.com/cortexproject/cortex/pkg/ruler/rulespb"
 )
 
 type DefaultMultiTenantManager struct {
@@ -31,7 +37,7 @@ type DefaultMultiTenantManager struct {
 
 	// Structs for holding per-user Prometheus rules Managers
 	// and a corresponding metrics struct
-	userManagerMtx     sync.Mutex
+	userManagerMtx     sync.RWMutex
 	userManagers       map[string]RulesManager
 	userManagerMetrics *ManagerMetrics
 
@@ -232,11 +238,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string, userManag
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 	var groups []*promRules.Group
-	r.userManagerMtx.Lock()
+	r.userManagerMtx.RLock()
 	if mngr, exists := r.userManagers[userID]; exists {
 		groups = mngr.RuleGroups()
 	}
-	r.userManagerMtx.Unlock()
+	r.userManagerMtx.RUnlock()
 	return groups
 }
 
@@ -298,4 +304,88 @@ func (*DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error
 	}
 
 	return errs
+}
+
+func SyncAlertsActiveAt(g *promRules.Group, lastEvalTimestamp time.Time, logger log.Logger) error {
+	var returnError error
+	level.Info(logger).Log("msg", "in syncAlertsActiveAt")
+	maxtMS := int64(model.TimeFromUnixNano(lastEvalTimestamp.UnixNano()))
+	// The time difference between each ruler start up. This should not be more than 10m
+	mint := lastEvalTimestamp.Add(-time.Minute * 10)
+	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+
+	q, err := g.Queryable().Querier(g.Context(), mintMS, maxtMS)
+	if err != nil {
+		return fmt.Errorf("failed to get Querier, %s", err)
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			returnError = fmt.Errorf("failed to close Querier %s", err)
+		}
+	}()
+
+	for _, rule := range g.Rules() {
+		alertRule, ok := rule.(*promRules.AlertingRule)
+		if !ok {
+			continue
+		}
+
+		if !alertRule.Restored() {
+			level.Debug(logger).Log("msg", "Skip the sync 'for' state since the alert hasn't been restore yet",
+				labels.AlertName, alertRule.Name())
+			continue
+		}
+		var it chunkenc.Iterator
+		alertRule.ForEachActiveAlert(func(a *promRules.Alert) {
+			var s storage.Series
+			s, err := alertRule.QueryforStateSeries(a, q)
+			if err != nil {
+				// Querier Warnings are ignored. We do not care unless we have an error.
+				level.Error(logger).Log(
+					"msg", "Failed to sync 'for' state",
+					labels.AlertName, alertRule.Name(),
+					"stage", "Select",
+					"err", err,
+				)
+				return
+			}
+
+			if s == nil {
+				level.Debug(logger).Log("msg", "Alert for state series nil",
+					labels.AlertName, alertRule.Name())
+				return
+			}
+
+			// Series found for the 'for' state.
+			var v float64
+			it = s.Iterator(it)
+			for it.Next() != chunkenc.ValNone {
+				_, v = it.At()
+			}
+			if it.Err() != nil {
+				level.Error(logger).Log("msg", "Failed to sync 'for' state",
+					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+				return
+			}
+			if value.IsStaleNaN(v) { // Alert was not active.
+				level.Debug(logger).Log("msg", "Alert not active",
+					labels.AlertName, alertRule.Name())
+				return
+			}
+
+			restoredActiveAt := time.Unix(int64(v), 0).UTC()
+			compare := restoredActiveAt.Sub(a.ActiveAt.UTC())
+
+			if compare <= 0 {
+				// We have another ruler instance evaluating the same rule group earlier
+				a.ActiveAt = restoredActiveAt
+			}
+
+			level.Debug(logger).Log("msg", "'for' state synced",
+				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
+				"labels", a.Labels.String())
+		})
+	}
+
+	return returnError
 }
