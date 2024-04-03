@@ -270,6 +270,21 @@ func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
 }
 
+func (r *Ruler) GetRing() *ring.Ring {
+	return r.ring
+}
+
+func (r *Ruler) GetLimits() RulesLimits {
+	return r.limits
+}
+
+func (r *Ruler) GetLifecycler() *ring.BasicLifecycler {
+	return r.lifecycler
+}
+func (r *Ruler) GetClientsPool() ClientsPool {
+	return r.clientsPool
+}
+
 func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:            cfg,

@@ -336,11 +336,12 @@ func TestGetRules(t *testing.T) {
 	type rulesMap map[string][]*rulespb.RuleDesc
 
 	type testCase struct {
-		sharding         bool
-		shardingStrategy string
-		shuffleShardSize int
-		rulesRequest     RulesRequest
-		expectedCount    map[string]int
+		sharding          bool
+		shardingStrategy  string
+		shuffleShardSize  int
+		replicationFactor int
+		rulesRequest      RulesRequest
+		expectedCount     map[string]int
 	}
 
 	ruleMap := rulesMap{
@@ -469,7 +470,8 @@ func TestGetRules(t *testing.T) {
 
 	testCases := map[string]testCase{
 		"No Sharding with Rule Type Filter": {
-			sharding: false,
+			sharding:          false,
+			replicationFactor: 1,
 			rulesRequest: RulesRequest{
 				Type: alertingRuleFilter,
 			},
@@ -480,8 +482,9 @@ func TestGetRules(t *testing.T) {
 			},
 		},
 		"Default Sharding with No Filter": {
-			sharding:         true,
-			shardingStrategy: util.ShardingStrategyDefault,
+			sharding:          true,
+			replicationFactor: 1,
+			shardingStrategy:  util.ShardingStrategyDefault,
 			expectedCount: map[string]int{
 				"user1": 5,
 				"user2": 9,
@@ -489,9 +492,10 @@ func TestGetRules(t *testing.T) {
 			},
 		},
 		"Shuffle Sharding and ShardSize = 2 with Rule Type Filter": {
-			sharding:         true,
-			shuffleShardSize: 2,
-			shardingStrategy: util.ShardingStrategyShuffle,
+			sharding:          true,
+			replicationFactor: 1,
+			shuffleShardSize:  2,
+			shardingStrategy:  util.ShardingStrategyShuffle,
 			rulesRequest: RulesRequest{
 				Type: recordingRuleFilter,
 			},
@@ -502,9 +506,10 @@ func TestGetRules(t *testing.T) {
 			},
 		},
 		"Shuffle Sharding and ShardSize = 2 and Rule Group Name Filter": {
-			sharding:         true,
-			shuffleShardSize: 2,
-			shardingStrategy: util.ShardingStrategyShuffle,
+			sharding:          true,
+			replicationFactor: 1,
+			shuffleShardSize:  2,
+			shardingStrategy:  util.ShardingStrategyShuffle,
 			rulesRequest: RulesRequest{
 				RuleGroupNames: []string{"third"},
 			},
@@ -515,9 +520,10 @@ func TestGetRules(t *testing.T) {
 			},
 		},
 		"Shuffle Sharding and ShardSize = 2 and Rule Group Name and Rule Type Filter": {
-			sharding:         true,
-			shuffleShardSize: 2,
-			shardingStrategy: util.ShardingStrategyShuffle,
+			sharding:          true,
+			replicationFactor: 1,
+			shuffleShardSize:  2,
+			shardingStrategy:  util.ShardingStrategyShuffle,
 			rulesRequest: RulesRequest{
 				RuleGroupNames: []string{"second", "third"},
 				Type:           recordingRuleFilter,
@@ -529,9 +535,10 @@ func TestGetRules(t *testing.T) {
 			},
 		},
 		"Shuffle Sharding and ShardSize = 2 with Rule Type and Namespace Filters": {
-			sharding:         true,
-			shuffleShardSize: 2,
-			shardingStrategy: util.ShardingStrategyShuffle,
+			sharding:          true,
+			replicationFactor: 1,
+			shuffleShardSize:  2,
+			shardingStrategy:  util.ShardingStrategyShuffle,
 			rulesRequest: RulesRequest{
 				Type:  alertingRuleFilter,
 				Files: []string{"latency-test"},
@@ -566,6 +573,7 @@ func TestGetRules(t *testing.T) {
 					KVStore: kv.Config{
 						Mock: kvStore,
 					},
+					ReplicationFactor: tc.replicationFactor,
 				}
 
 				r, _ := buildRuler(t, cfg, nil, store, rulerAddrMap)
@@ -626,12 +634,16 @@ func TestGetRules(t *testing.T) {
 					if tc.sharding {
 						mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 
-						if tc.shardingStrategy == util.ShardingStrategyShuffle {
-							require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
-						} else {
-							require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
+						// If replication factor larger than 1, we don't necessary need to wait for all ruler's call to complete to get the
+						// complete result
+						if tc.sharding && tc.replicationFactor <= 1 {
+							if tc.shardingStrategy == util.ShardingStrategyShuffle {
+								require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
+							} else {
+								require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
+							}
+							mockPoolClient.numberOfCalls.Store(0)
 						}
-						mockPoolClient.numberOfCalls.Store(0)
 					}
 				})
 			}
@@ -648,8 +660,10 @@ func TestGetRules(t *testing.T) {
 				totalConfiguredRules += len(allRulesByRuler[rID])
 			})
 
-			if tc.sharding {
+			if tc.sharding && tc.replicationFactor <= 1 {
 				require.Equal(t, totalConfiguredRules, totalLoadedRules)
+			} else if tc.replicationFactor > 1 {
+				require.Equal(t, totalConfiguredRules*tc.replicationFactor, totalLoadedRules)
 			} else {
 				// Not sharding means that all rules will be loaded on all rulers
 				numberOfRulers := len(rulerAddrMap)
@@ -1060,9 +1074,10 @@ func TestSharding(t *testing.T) {
 					EnableSharding:   tc.sharding,
 					ShardingStrategy: tc.shardingStrategy,
 					Ring: RingConfig{
-						InstanceID:   id,
-						InstanceAddr: host,
-						InstancePort: port,
+						ReplicationFactor: 1,
+						InstanceID:        id,
+						InstanceAddr:      host,
+						InstancePort:      port,
 						KVStore: kv.Config{
 							Mock: kvStore,
 						},
@@ -1197,9 +1212,10 @@ func Test_LoadPartialGroups(t *testing.T) {
 		RingCheckPeriod:  time.Minute,
 		ShardingStrategy: util.ShardingStrategyShuffle,
 		Ring: RingConfig{
-			InstanceID:   ruler1,
-			InstanceAddr: ruler1Host,
-			InstancePort: ruler1Port,
+			ReplicationFactor: 1,
+			InstanceID:        ruler1,
+			InstanceAddr:      ruler1Host,
+			InstancePort:      ruler1Port,
 			KVStore: kv.Config{
 				Mock: kvStore,
 			},
@@ -1720,9 +1736,10 @@ func TestRulerDisablesRuleGroups(t *testing.T) {
 					EnableSharding:   tc.sharding,
 					ShardingStrategy: tc.shardingStrategy,
 					Ring: RingConfig{
-						InstanceID:   id,
-						InstanceAddr: host,
-						InstancePort: port,
+						ReplicationFactor: 1,
+						InstanceID:        id,
+						InstanceAddr:      host,
+						InstancePort:      port,
 						KVStore: kv.Config{
 							Mock: kvStore,
 						},
