@@ -470,7 +470,14 @@ func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, disabledRu
 		return false, errors.Wrap(err, "error reading ring to verify rule group ownership")
 	}
 
-	ownsRuleGroup := rlrs.Instances[0].Addr == instanceAddr
+	ownsRuleGroup := false
+	for _, instance := range rlrs.Instances {
+		if instance.Addr == instanceAddr {
+			ownsRuleGroup = true
+			break
+		}
+	}
+
 	if ownsRuleGroup && ruleGroupDisabled(g, disabledRuleGroups) {
 		return false, &DisabledRuleGroupErr{Message: fmt.Sprintf("rule group %s, namespace %s, user %s is disabled", g.Name, g.Namespace, g.User)}
 	}
