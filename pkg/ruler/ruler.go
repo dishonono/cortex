@@ -790,7 +790,7 @@ func (r *Ruler) getLocalRules(userID string, rulesRequest RulesRequest) ([]*Grou
 	for _, group := range groups {
 		// The mapped filename is url path escaped encoded to make handling `/` characters easier
 		decodedNamespace, err := url.PathUnescape(strings.TrimPrefix(group.File(), prefix))
-		r.logger.Log("msg", "getLocalRules", "userID", userID, "decodedNamespace", decodedNamespace, "groupName", group.Name(), "ruleNameSet", strings.Join(rulesRequest.RuleNames, ";"), "ruleGroupNameSet", strings.Join(rulesRequest.RuleGroupNames, ";"), "fileSet", strings.Join(rulesRequest.Files, ";"))
+
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to decode rule filename")
 		}
