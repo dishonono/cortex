@@ -293,6 +293,21 @@ type Ruler struct {
 	logger   log.Logger
 }
 
+func (r *Ruler) GetRing() *ring.Ring {
+	return r.ring
+}
+
+func (r *Ruler) GetLimits() RulesLimits {
+	return r.limits
+}
+
+func (r *Ruler) GetLifecycler() *ring.BasicLifecycler {
+	return r.lifecycler
+}
+func (r *Ruler) GetClientsPool() ClientsPool {
+	return r.clientsPool
+}
+
 // NewRuler creates a new ruler from a distributor and chunk store.
 func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
 	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
@@ -488,18 +503,12 @@ func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, disabledRu
 		return false, errors.Wrap(err, "error reading ring to verify rule group ownership")
 	}
 
-	var ownsRuleGroup bool
-	if forBackup {
-		// Only the second up to the last replica are used as backup
-		for i := 1; i < len(rlrs.Instances); i++ {
-			if rlrs.Instances[i].Addr == instanceAddr {
-				ownsRuleGroup = true
-				break
-			}
+	ownsRuleGroup := false
+	for _, instance := range rlrs.Instances {
+		if instance.Addr == instanceAddr {
+			ownsRuleGroup = true
+			break
 		}
-	} else {
-		// Even if the replication factor is set to a number bigger than 1, only the first ruler evaluates the rule group
-		ownsRuleGroup = rlrs.Instances[0].Addr == instanceAddr
 	}
 
 	if ownsRuleGroup && ruleGroupDisabled(g, disabledRuleGroups) {

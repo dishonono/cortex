@@ -14,11 +14,16 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -322,6 +327,90 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string, userManag
 
 	r.notifiers[userID] = n
 	return n.notifier, nil
+}
+
+func SyncAlertsActiveAt(ctx context.Context, g *promRules.Group, lastEvalTimestamp time.Time, logger log.Logger) error {
+	var returnError error
+	level.Info(logger).Log("msg", "in syncAlertsActiveAt")
+	maxtMS := int64(model.TimeFromUnixNano(lastEvalTimestamp.UnixNano()))
+	// The time difference between each ruler start up. This should not be more than 10m
+	mint := lastEvalTimestamp.Add(-time.Minute * 10)
+	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+
+	q, err := g.Queryable().Querier(mintMS, maxtMS)
+	if err != nil {
+		return fmt.Errorf("failed to get Querier, %s", err)
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			returnError = fmt.Errorf("failed to close Querier %s", err)
+		}
+	}()
+
+	for _, rule := range g.Rules() {
+		alertRule, ok := rule.(*promRules.AlertingRule)
+		if !ok {
+			continue
+		}
+
+		if !alertRule.Restored() {
+			level.Debug(logger).Log("msg", "Skip the sync 'for' state since the alert hasn't been restore yet",
+				labels.AlertName, alertRule.Name())
+			continue
+		}
+		var it chunkenc.Iterator
+		alertRule.ForEachActiveAlert(func(a *promRules.Alert) {
+			var s storage.Series
+			s, err := alertRule.QueryforStateSeries(ctx, a, q)
+			if err != nil {
+				// Querier Warnings are ignored. We do not care unless we have an error.
+				level.Error(logger).Log(
+					"msg", "Failed to sync 'for' state",
+					labels.AlertName, alertRule.Name(),
+					"stage", "Select",
+					"err", err,
+				)
+				return
+			}
+
+			if s == nil {
+				level.Debug(logger).Log("msg", "Alert for state series nil",
+					labels.AlertName, alertRule.Name())
+				return
+			}
+
+			// Series found for the 'for' state.
+			var v float64
+			it = s.Iterator(it)
+			for it.Next() != chunkenc.ValNone {
+				_, v = it.At()
+			}
+			if it.Err() != nil {
+				level.Error(logger).Log("msg", "Failed to sync 'for' state",
+					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+				return
+			}
+			if value.IsStaleNaN(v) { // Alert was not active.
+				level.Debug(logger).Log("msg", "Alert not active",
+					labels.AlertName, alertRule.Name())
+				return
+			}
+
+			restoredActiveAt := time.Unix(int64(v), 0).UTC()
+			compare := restoredActiveAt.Sub(a.ActiveAt.UTC())
+
+			if compare <= 0 {
+				// We have another ruler instance evaluating the same rule group earlier
+				a.ActiveAt = restoredActiveAt
+			}
+
+			level.Debug(logger).Log("msg", "'for' state synced",
+				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
+				"labels", a.Labels.String())
+		})
+	}
+
+	return returnError
 }
 
 func (r *DefaultMultiTenantManager) getCachedRules(userID string) ([]*promRules.Group, bool) {
