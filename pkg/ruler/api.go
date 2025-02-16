@@ -18,6 +18,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/weaveworks/common/user"
 	"gopkg.in/yaml.v3"
 
@@ -517,9 +518,26 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		err = yaml.Unmarshal(rgYaml, &rulefmt.RuleGroup{})
 	}
 	if err != nil {
-		level.Error(logger).Log("msg", "unable to load rule group from proto", "err", err.Error(), "user", userID)
-		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
-		return
+
+		for idx, rule := range rg.Rules {
+			if expression, err := parser.ParseExpr(rule.Expr.Value); err == nil {
+				rg.Rules[idx].Expr.Value = expression.String()
+				_ = expression.String()
+			}
+		}
+
+		rgProto = rulespb.ToProto(userID, namespace, rg)
+		loadedRg = rulespb.FromProto(rgProto)
+		rgYaml, err = yaml.Marshal(loadedRg)
+		if err == nil {
+			err = yaml.Unmarshal(rgYaml, &rulefmt.RuleGroup{})
+		}
+
+		if err != nil {
+			level.Error(logger).Log("msg", "unable to load rule group from proto", "err", err.Error(), "user", userID)
+			http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	level.Debug(logger).Log("msg", "attempting to store rulegroup", "userID", userID, "group", rgProto.String())
