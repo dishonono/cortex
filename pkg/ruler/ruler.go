@@ -566,7 +566,7 @@ func (r *Ruler) instanceOwnsRuleGroup(rr ring.ReadRing, g *rulespb.RuleGroupDesc
 	instanceAddr := r.lifecycler.GetInstanceAddr()
 
 	// Only the second up to the last replica are used as backup
-	for i := 1; i < len(rlrs.Instances); i++ {
+	for i := 0; i < len(rlrs.Instances); i++ {
 		if rlrs.Instances[i].Addr == instanceAddr {
 			return ownsRuleGroupOrDisable(g, disabledRuleGroups)
 		}
