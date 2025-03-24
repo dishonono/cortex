@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
@@ -64,9 +65,11 @@ type DefaultMultiTenantManager struct {
 	ruleCache    map[string][]*promRules.Group
 	ruleCacheMtx sync.RWMutex
 	syncRuleMtx  sync.Mutex
+
+	groupEvalIterationFunc rules.GroupEvalIterationFunc
 }
 
-func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory ManagerFactory, evalMetrics *RuleEvalMetrics, reg prometheus.Registerer, logger log.Logger) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory ManagerFactory, evalMetrics *RuleEvalMetrics, reg prometheus.Registerer, logger log.Logger, groupEvalIterationFunc rules.GroupEvalIterationFunc) (*DefaultMultiTenantManager, error) {
 	ncfg, err := buildNotifierConfig(&cfg)
 	if err != nil {
 		return nil, err
@@ -87,6 +90,9 @@ func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to register service discovery metrics", "err", err)
 		os.Exit(1)
+	}
+	if groupEvalIterationFunc == nil {
+		groupEvalIterationFunc = ruleGroupIterationFunc
 	}
 
 	m := &DefaultMultiTenantManager{
@@ -122,8 +128,9 @@ func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory
 			Name:      "ruler_config_updates_total",
 			Help:      "Total number of config updates triggered by a user",
 		}, []string{"user"}),
-		registry: reg,
-		logger:   logger,
+		registry:               reg,
+		logger:                 logger,
+		groupEvalIterationFunc: groupEvalIterationFunc,
 	}
 	if cfg.RulesBackupEnabled() {
 		m.rulesBackupManager = newRulesBackupManager(cfg, logger, reg)
@@ -214,7 +221,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		if (rulesUpdated || externalLabelsUpdated) && existing {
 			r.updateRuleCache(user, manager.RuleGroups())
 		}
-		err = manager.Update(r.cfg.EvaluationInterval, files, externalLabels, r.cfg.ExternalURL.String(), ruleGroupIterationFunc)
+		err = manager.Update(r.cfg.EvaluationInterval, files, externalLabels, r.cfg.ExternalURL.String(), r.groupEvalIterationFunc)
 		r.deleteRuleCache(user)
 		if err != nil {
 			r.lastReloadSuccessful.WithLabelValues(user).Set(0)

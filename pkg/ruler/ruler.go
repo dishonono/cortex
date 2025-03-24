@@ -342,6 +342,21 @@ func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig.Config, logger, reg))
 }
 
+func (r *Ruler) GetRing() *ring.Ring {
+	return r.ring
+}
+
+func (r *Ruler) GetLimits() RulesLimits {
+	return r.limits
+}
+
+func (r *Ruler) GetLifecycler() *ring.BasicLifecycler {
+	return r.lifecycler
+}
+func (r *Ruler) GetClientsPool() ClientsPool {
+	return r.clientsPool
+}
+
 func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:            cfg,
@@ -549,31 +564,12 @@ func (r *Ruler) instanceOwnsRuleGroup(rr ring.ReadRing, g *rulespb.RuleGroupDesc
 	}
 
 	instanceAddr := r.lifecycler.GetInstanceAddr()
-	if forBackup {
-		// Only the second up to the last replica are used as backup
-		for i := 1; i < len(rlrs.Instances); i++ {
-			if rlrs.Instances[i].Addr == instanceAddr {
-				return ownsRuleGroupOrDisable(g, disabledRuleGroups)
-			}
+
+	// Only the second up to the last replica are used as backup
+	for i := 1; i < len(rlrs.Instances); i++ {
+		if rlrs.Instances[i].Addr == instanceAddr {
+			return ownsRuleGroupOrDisable(g, disabledRuleGroups)
 		}
-		return false, nil
-	}
-	if r.Config().EnableHAEvaluation {
-		for i, ruler := range rlrs.Instances {
-			if ruler.Addr == instanceAddr && i == 0 {
-				level.Debug(r.Logger()).Log("msg", "primary taking ownership", "user", g.User, "group", g.Name, "namespace", g.Namespace, "ruler", instanceAddr)
-				return ownsRuleGroupOrDisable(g, disabledRuleGroups)
-			}
-			if ruler.Addr == instanceAddr && r.nonPrimaryInstanceOwnsRuleGroup(g, rlrs.GetAddresses()[:i]) {
-				level.Info(r.Logger()).Log("msg", "non-primary ruler taking ownership", "user", g.User, "group", g.Name, "namespace", g.Namespace, "ruler", instanceAddr)
-				return ownsRuleGroupOrDisable(g, disabledRuleGroups)
-			}
-		}
-		return false, nil
-	}
-	// Even if the replication factor is set to a number bigger than 1, only the first ruler evaluates the rule group
-	if rlrs.Instances[0].Addr == instanceAddr {
-		return ownsRuleGroupOrDisable(g, disabledRuleGroups)
 	}
 	return false, nil
 }
