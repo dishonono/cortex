@@ -138,7 +138,7 @@ func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory
 }
 
 func NewDefaultMultiTenantManagerWithIterationFunc(iterFunc promRules.GroupEvalIterationFunc, cfg Config, limits RulesLimits, managerFactory ManagerFactory, evalMetrics *RuleEvalMetrics, reg prometheus.Registerer, logger log.Logger) (*DefaultMultiTenantManager, error) {
-	manager, err := NewDefaultMultiTenantManager(cfg, limits, managerFactory, evalMetrics, reg, logger)
+	manager, err := NewDefaultMultiTenantManager(cfg, limits, managerFactory, evalMetrics, reg, logger, nil)
 	if err != nil {
 		return nil, err
 	}
