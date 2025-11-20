@@ -68,7 +68,7 @@ type DefaultMultiTenantManager struct {
 	ruleGroupIterationFunc promRules.GroupEvalIterationFunc
 }
 
-func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory ManagerFactory, evalMetrics *RuleEvalMetrics, reg prometheus.Registerer, logger log.Logger) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory ManagerFactory, evalMetrics *RuleEvalMetrics, reg prometheus.Registerer, logger log.Logger, iterFunc promRules.GroupEvalIterationFunc) (*DefaultMultiTenantManager, error) {
 	ncfg, err := buildNotifierConfig(&cfg)
 	if err != nil {
 		return nil, err
@@ -126,7 +126,10 @@ func NewDefaultMultiTenantManager(cfg Config, limits RulesLimits, managerFactory
 		}, []string{"user"}),
 		registry:               reg,
 		logger:                 logger,
-		ruleGroupIterationFunc: defaultRuleGroupIterationFunc,
+		ruleGroupIterationFunc: iterFunc,
+	}
+	if m.ruleGroupIterationFunc == nil {
+		m.ruleGroupIterationFunc = defaultRuleGroupIterationFunc
 	}
 	if cfg.RulesBackupEnabled() {
 		m.rulesBackupManager = newRulesBackupManager(cfg, logger, reg)
