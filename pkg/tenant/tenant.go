@@ -34,7 +34,7 @@ func (e *errTenantIDUnsupportedCharacter) Error() string {
 
 const tenantIDsLabelSeparator = "|"
 
-// NormalizeTenantIDs is creating a normalized form by sorting and de-duplicating the list of tenantIDs
+// NormalizeTenantIDs is creating a normalized form by sortiing and de-duplicating the list of tenantIDs
 func NormalizeTenantIDs(tenantIDs []string) []string {
 	sort.Strings(tenantIDs)
 
@@ -54,7 +54,7 @@ func NormalizeTenantIDs(tenantIDs []string) []string {
 	return tenantIDs[0:posOut]
 }
 
-// ValidTenantID validate tenantID
+// ValidTenantID
 func ValidTenantID(s string) error {
 	// check if it contains invalid runes
 	for pos, r := range s {
@@ -66,12 +66,8 @@ func ValidTenantID(s string) error {
 		}
 	}
 
-	if err := CheckTenantIDLength(s); err != nil {
-		return err
-	}
-
-	if err := CheckTenantIDIsSupported(s); err != nil {
-		return err
+	if len(s) > 150 {
+		return errTenantIDTooLong
 	}
 
 	return nil

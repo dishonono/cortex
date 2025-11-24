@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -66,8 +67,14 @@ type SingleResolver struct {
 // `\` can be found.
 func containsUnsafePathSegments(id string) bool {
 	// handle the relative reference to current and parent path.
-	return id == "." || id == ".."
+	if id == "." || id == ".." {
+		return true
+	}
+
+	return strings.ContainsAny(id, "\\/")
 }
+
+var errInvalidTenantID = errors.New("invalid tenant ID")
 
 func (t *SingleResolver) TenantID(ctx context.Context) (string, error) {
 	//lint:ignore faillint wrapper around upstream method
@@ -76,8 +83,8 @@ func (t *SingleResolver) TenantID(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if err := ValidTenantID(id); err != nil {
-		return "", err
+	if containsUnsafePathSegments(id) {
+		return "", errInvalidTenantID
 	}
 
 	return id, nil
@@ -123,8 +130,16 @@ func (t *MultiResolver) TenantIDs(ctx context.Context) ([]string, error) {
 	}
 
 	orgIDs := strings.Split(orgID, tenantIDsLabelSeparator)
+	for _, orgID := range orgIDs {
+		if err := ValidTenantID(orgID); err != nil {
+			return nil, err
+		}
+		if containsUnsafePathSegments(orgID) {
+			return nil, errInvalidTenantID
+		}
+	}
 
-	return ValidateOrgIDs(orgIDs)
+	return NormalizeTenantIDs(orgIDs), nil
 }
 
 func ValidateOrgIDs(orgIDs []string) ([]string, error) {
