@@ -13,6 +13,7 @@ import (
 // HealthCheck fulfills the grpc_health_v1.HealthServer interface by ensuring
 // the services being managed by the provided service manager are healthy.
 type HealthCheck struct {
+	grpc_health_v1.UnimplementedHealthServer
 	sm *services.Manager
 }
 
